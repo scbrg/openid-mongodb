@@ -29,13 +29,11 @@ class MongoDBStore(OpenIDStore):
             self._db.authenticate(username, password)
         self.associations = self._db[associations_collection]
         self.nonces = self._db[nonces_collection]
-        self.log_debug = logging.DEBUG >= log.getEffectiveLevel()
         super(MongoDBStore, self).__init__()
 
     def storeAssociation(self, server_url, association):
-        if self.log_debug:
-            log.debug("Storing association for server_url: %s, with handle: %s",
-                      server_url, association.handle)
+        log.debug("Storing association for server_url: %s, with handle: %s",
+                  server_url, association.handle)
         if server_url.find('://') == -1:
             raise ValueError('Bad server URL: %r' % server_url)
         self.associations.insert_one({
@@ -47,9 +45,8 @@ class MongoDBStore(OpenIDStore):
         })
 
     def getAssociation(self, server_url, handle=None):
-        if self.log_debug:
-            log.debug("Association requested for server_url: %s, with handle: %s",
-                      server_url, handle)
+        log.debug("Association requested for server_url: %s, with handle: %s",
+                  server_url, handle)
         if server_url.find('://') == -1:
             raise ValueError('Bad server URL: %r' % server_url)
         if handle is None:
@@ -73,9 +70,8 @@ class MongoDBStore(OpenIDStore):
                 return Association.deserialize(association['association'])
 
     def removeAssociation(self, server_url, handle):
-        if self.log_debug:
-            log.debug('Removing association for server_url: %s, with handle: %s',
-                      server_url, handle)
+        log.debug('Removing association for server_url: %s, with handle: %s',
+                  server_url, handle)
         if server_url.find('://') == -1:
             raise ValueError('Bad server URL: %r' % server_url)
         res = self.associations.delete_one({"_id": hash((server_url, handle)),
@@ -89,8 +85,7 @@ class MongoDBStore(OpenIDStore):
 
     def useNonce(self, server_url, timestamp, salt):
         if abs(timestamp - time.time()) > nonce.SKEW:
-            if self.log_debug:
-                log.debug('Timestamp from current time is less than skew')
+            log.debug('Timestamp from current time is less than skew')
             return False
 
         n = hash((server_url, timestamp, salt))
@@ -100,8 +95,7 @@ class MongoDBStore(OpenIDStore):
                                     "timestamp": timestamp,
                                     "salt": salt})
         except DuplicateKeyError, e:
-            if self.log_debug:
-                log.debug('Nonce already exists: %s', n)
+            log.debug('Nonce already exists: %s', n)
             return False
         else:
             return True
