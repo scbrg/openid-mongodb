@@ -6,7 +6,6 @@ import time, logging
 from openid.store import nonce
 from openid.store.interface import OpenIDStore
 from openid.association import Association
-import pymongo
 from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError
 
