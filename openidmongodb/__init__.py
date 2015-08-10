@@ -6,7 +6,8 @@ import time, logging
 from openid.store import nonce
 from openid.store.interface import OpenIDStore
 from openid.association import Association
-from pymongo import Connection
+import pymongo
+from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError
 
 log = logging.getLogger(__name__)
@@ -15,11 +16,15 @@ __all__ = ["MongoDBStore"]
 
 class MongoDBStore(OpenIDStore):
 
-    def __init__(self, host="localhost", port=27017, db="openid",
+    def __init__(self, host="localhost", port=27017, db="openid", database=None,
                  associations_collection="associations", nonces_collection="nonces",
                  username=None, password=None):
-        self._conn = Connection(host, int(port))
-        self._db = self._conn[db]
+        if database is not None:
+            self._conn = database.connection
+            self._db = database
+        else:
+            self._conn = MongoClient(host, port)
+            self._db = self._conn[db]
         if username and password:
             self._db.authenticate(username, password)
         self.associations = self._db[associations_collection]
@@ -33,7 +38,7 @@ class MongoDBStore(OpenIDStore):
                       server_url, association.handle)
         if server_url.find('://') == -1:
             raise ValueError('Bad server URL: %r' % server_url)
-        self.associations.insert({
+        self.associations.insert_one({
             "_id": hash((server_url, association.handle)),
             "server_url": server_url,
             "handle": association.handle,
@@ -73,17 +78,14 @@ class MongoDBStore(OpenIDStore):
                       server_url, handle)
         if server_url.find('://') == -1:
             raise ValueError('Bad server URL: %r' % server_url)
-        res = self.associations.remove({"_id": hash((server_url, handle)),
-                                        "server_url": server_url,
-                                        "handle": handle},
-                                       safe=True)
-        return bool(res['n'])
+        res = self.associations.delete_one({"_id": hash((server_url, handle)),
+                                            "server_url": server_url,
+                                            "handle": handle})
+        return bool(res.deleted_count)
 
     def cleanupAssociations(self):
-        r = self.associations.remove(
-            {"expires": {"$gt": time.time()}},
-            safe=True)
-        return r['n']
+        r = self.associations.delete_many({"expires": {"$gt": time.time()}})
+        return r.deleted_count
 
     def useNonce(self, server_url, timestamp, salt):
         if abs(timestamp - time.time()) > nonce.SKEW:
@@ -93,11 +95,10 @@ class MongoDBStore(OpenIDStore):
 
         n = hash((server_url, timestamp, salt))
         try:
-            self.nonces.insert({"_id": n,
-                                "server_url": server_url,
-                                "timestamp": timestamp,
-                                "salt": salt},
-                               safe=True)
+            self.nonces.insert_one({"_id": n,
+                                    "server_url": server_url,
+                                    "timestamp": timestamp,
+                                    "salt": salt})
         except DuplicateKeyError, e:
             if self.log_debug:
                 log.debug('Nonce already exists: %s', n)
@@ -106,8 +107,8 @@ class MongoDBStore(OpenIDStore):
             return True
 
     def cleanupNonces(self):
-        r = self.nonces.remove(
+        r = self.nonces.delete_many(
             {"$or": [{"timestamp": {"$gt": time.time() + nonce.SKEW}},
                      {"timestamp": {"$lt": time.time() - nonce.SKEW}}]},
             safe=True)
-        return r['n']
+        return r.deleted_count
